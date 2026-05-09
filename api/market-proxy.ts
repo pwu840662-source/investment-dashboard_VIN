@@ -8,11 +8,10 @@ const TARGETS: Record<Target, string> = {
   coingecko: "https://api.coingecko.com",
 };
 
-function getPathParts(req: VercelRequest): string[] {
-  const raw = req.query.path;
-  if (Array.isArray(raw)) return raw as string[];
-  if (typeof raw === "string") return raw.split("/").filter(Boolean);
-  return [];
+function isSafeUpstreamPath(p: string): boolean {
+  if (!p || p.length > 2048) return false;
+  if (/\.\.|:\/\//.test(p)) return false;
+  return true;
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -21,16 +20,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
-  const parts = getPathParts(req);
-  const targetKey = (parts.shift() ?? "") as Target;
-  if (!targetKey || !(targetKey in TARGETS)) {
-    res.status(400).json({ error: "Bad target" });
+  const url = new URL(req.url ?? "/", "https://x");
+  const t = url.searchParams.get("t") as Target;
+  const p = url.searchParams.get("p");
+  if (!t || !p || !(t in TARGETS)) {
+    res.status(400).json({ error: "Bad target or path" });
+    return;
+  }
+  if (!isSafeUpstreamPath(p)) {
+    res.status(400).json({ error: "Bad path" });
     return;
   }
 
-  const upstreamPath = `/${parts.join("/")}`;
-  const qs = req.url?.includes("?") ? req.url.slice(req.url.indexOf("?")) : "";
-  const upstreamUrl = `${TARGETS[targetKey]}${upstreamPath}${qs}`;
+  url.searchParams.delete("t");
+  url.searchParams.delete("p");
+  const upstreamQs = url.searchParams.toString();
+  const encodedPath = p
+    .split("/")
+    .filter(Boolean)
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  const upstreamUrl = `${TARGETS[t]}/${encodedPath}${upstreamQs ? `?${upstreamQs}` : ""}`;
 
   const upstream = await fetch(upstreamUrl, {
     method: req.method,

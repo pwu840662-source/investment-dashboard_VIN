@@ -16,27 +16,54 @@ export interface QuoteRow {
   sparkline?: number[] | null;
 }
 
-function basePath(name: "yahoo" | "frankfurter" | "coingecko"): string {
-  // dev：用 Vite proxy；prod：用 api/[...path].ts 同源轉發（避免 api/proxy/ 嵌套路由在部份部署環境回 404）
-  if (import.meta.env.DEV) return `/${name}`;
-  return `/api/${name}`;
+/**
+ * dev：Vite `/yahoo` 等 proxy；prod：`/api/market-proxy`（純靜態專案在 Vercel 無法使用 `api/[...path]` 動態檔案路由）
+ */
+function proxyFetchUrl(
+  target: "yahoo" | "frankfurter" | "coingecko",
+  upstreamPathAndQuery: string,
+): string {
+  const combined = upstreamPathAndQuery.startsWith("/")
+    ? upstreamPathAndQuery
+    : `/${upstreamPathAndQuery}`;
+  if (import.meta.env.DEV) {
+    return `/${target}${combined}`;
+  }
+  const qm = combined.indexOf("?");
+  const pathOnly = qm >= 0 ? combined.slice(0, qm) : combined;
+  const queryOnly = qm >= 0 ? combined.slice(qm + 1) : "";
+  const p = pathOnly.replace(/^\//, "");
+  const out = new URLSearchParams();
+  out.set("t", target);
+  out.set("p", p);
+  if (queryOnly) {
+    const extra = new URLSearchParams(queryOnly);
+    extra.forEach((v, k) => {
+      out.append(k, v);
+    });
+  }
+  return `/api/market-proxy?${out.toString()}`;
 }
 
+/** prod 請傳未 encode 的 symbol，由 market-proxy 分段編碼，避免 `p` 查詢參數雙重編碼 */
 const yahooPath = (symbol: string) =>
-  `${basePath("yahoo")}/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
+  import.meta.env.DEV
+    ? `/yahoo/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`
+    : proxyFetchUrl("yahoo", `/v8/finance/chart/${symbol}?range=1d&interval=1d`);
 
 const yahooSparkPath = (symbol: string) =>
-  `${basePath("yahoo")}/v8/finance/chart/${encodeURIComponent(symbol)}?range=1mo&interval=1d`;
+  import.meta.env.DEV
+    ? `/yahoo/v8/finance/chart/${encodeURIComponent(symbol)}?range=1mo&interval=1d`
+    : proxyFetchUrl("yahoo", `/v8/finance/chart/${symbol}?range=1mo&interval=1d`);
 
 function frankfurterUrl(pathQuery: string): string {
   const path = pathQuery.startsWith("/") ? pathQuery : `/${pathQuery}`;
-  return import.meta.env.DEV ? `${basePath("frankfurter")}${path}` : `${basePath("frankfurter")}${path}`;
+  return proxyFetchUrl("frankfurter", path);
 }
 
-/** CoinGecko：開發走 Vite proxy；正式走同源 proxy */
 function coingeckoUrl(pathQuery: string): string {
   const path = pathQuery.startsWith("/") ? pathQuery : `/${pathQuery}`;
-  return `${basePath("coingecko")}${path}`;
+  return proxyFetchUrl("coingecko", path);
 }
 
 function parseYahooJson(data: unknown): {
