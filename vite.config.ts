@@ -34,7 +34,12 @@ export default defineConfig({
       workbox: {
         cleanupOutdatedCaches: true,
         navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
+            handler: "NetworkOnly",
+          },
           {
             urlPattern: ({ url }) => url.pathname.startsWith("/yahoo/"),
             handler: "NetworkFirst",

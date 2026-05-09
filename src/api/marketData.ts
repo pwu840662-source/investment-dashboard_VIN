@@ -17,9 +17,9 @@ export interface QuoteRow {
 }
 
 function basePath(name: "yahoo" | "frankfurter" | "coingecko"): string {
-  // dev：用 Vite proxy；prod：用同源 Serverless proxy（方便部署後仍可讀取資料，避免 CORS）
+  // dev：用 Vite proxy；prod：用 api/[...path].ts 同源轉發（避免 api/proxy/ 嵌套路由在部份部署環境回 404）
   if (import.meta.env.DEV) return `/${name}`;
-  return `/api/proxy/${name}`;
+  return `/api/${name}`;
 }
 
 const yahooPath = (symbol: string) =>
